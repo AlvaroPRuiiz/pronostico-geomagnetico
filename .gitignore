@@ -218,3 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Datos descargados y procesados
+data/raw/
+data/processed/
+
+# Claves de servicios
+.env
+.env.*
+!.env.example
