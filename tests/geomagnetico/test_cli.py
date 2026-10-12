@@ -6,7 +6,7 @@ from src.pronostico_geomagnetico.loader import COLUMN_NAMES
 
 def test_cli_archivo_inexistente(tmp_path):
     """Termina con código 1 si el archivo de entrada no existe."""
-    # Preparar.
+
     entrada = tmp_path / "no_existe.dat"
     salida = tmp_path / "metricas.json"
 
@@ -15,11 +15,9 @@ def test_cli_archivo_inexistente(tmp_path):
         "--output", str(salida),
     ]
 
-    # Ejecutar.
     with pytest.raises(SystemExit) as error:
         main(argumentos)
 
-    # Comprobar.
     assert error.value.code == 1
     assert not salida.exists()
     
@@ -27,7 +25,6 @@ def test_cli_archivo_inexistente(tmp_path):
 def test_cli_archivo_valido(tmp_path):
     """Guarda las métricas de un archivo OMNI válido."""
 
-    # Preparar una fila con las 55 columnas.
     entrada = tmp_path / "omni.dat"
     salida = tmp_path / "resultados" / "metricas.json"
 
@@ -38,13 +35,11 @@ def test_cli_archivo_valido(tmp_path):
 
     entrada.write_text(" ".join(valores) + "\n", encoding="utf-8")
 
-    # Ejecutar.
     main([
         "--input", str(entrada),
         "--output", str(salida),
     ])
 
-    # Comprobar.
     assert salida.is_file()
 
     resultado = json.loads(salida.read_text(encoding="utf-8"))
@@ -53,3 +48,13 @@ def test_cli_archivo_valido(tmp_path):
     assert resultado["filas_completas"] == 1
     assert resultado["filas_incompletas"] == 0
     assert resultado["porcentaje_completas"] == 100.0
+
+@pytest.mark.integration
+def test_cli_dataset_2000(tmp_path):
+    from pathlib import Path
+    entrada = Path(__file__).resolve().parents[2] / "data" / "raw" / "omni2_2000.dat"
+    salida = tmp_path / "metricas.json"
+    main(["--input", str(entrada), "--output", str(salida)])
+    resultado = json.loads(salida.read_text())
+    assert resultado["total_filas"] == 8784
+    assert resultado["filas_completas"] + resultado["filas_incompletas"] == 8784

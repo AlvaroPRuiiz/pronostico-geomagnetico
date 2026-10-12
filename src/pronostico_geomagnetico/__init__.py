@@ -1,2 +1,1 @@
-def __init__(self):
-    pass
+"""Pipeline de calidad de datos horarios NASA OMNI."""

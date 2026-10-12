@@ -1,4 +1,4 @@
-﻿name: Tests
+name: Tests
 
 on:
   push:
@@ -24,6 +24,7 @@ jobs:
       - name: Ejecutar tests y comprobar cobertura
         run: >
           python -m pytest tests
+          --cov=src.ventas_app
           --cov=src.pronostico_geomagnetico
           --cov-report=term-missing
           --cov-fail-under=60
