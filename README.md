@@ -4,7 +4,7 @@ Este proyecto reúne el pipeline de ventas del curso y otro con datos de NASA OM
 
 ## Organización
 
-El código está en `src/ventas_app/` y `src/pronostico_geomagnetico/`, y sus pruebas en `tests/ventas/` y `tests/geomagnetico/`. Los datasets están en `data/` y los notebooks en `notebooks/`.
+El código está en `src/ventas_app/` y `src/pronostico_geomagnetico/`, y sus pruebas en `tests/ventas/` y `tests/geomagnetico/`. Los datasets se descargan en `data/` (excluida de Git) y los notebooks en `notebooks/`.
 
 En ventas utilizo `SalesRepository` y `CsvSalesRepository`, siguiendo el ejemplo de clase. Los principios SOLID aplicados están explicados en [DESIGN.md](src/ventas_app/DESIGN.md).
 
@@ -14,6 +14,7 @@ Desde la raíz del repositorio, con Python 3.12:
 
 ```bash
 python -m pip install -r requirements.txt
+python scripts/download_data.py
 python -m src.ventas_app.cli --input data/ventas.csv --output data/processed/ventas_validas.csv
 python -m src.pronostico_geomagnetico.cli --input data/raw/omni2_2000.dat --output data/processed/metrics_2000.json
 ```
@@ -37,7 +38,7 @@ python -m pytest -q -m "not integration"
 python -m pytest tests --cov=src.ventas_app --cov=src.pronostico_geomagnetico --cov-report=term-missing --cov-fail-under=60
 ```
 
-Las pruebas usan datos en memoria, archivos temporales y los datasets incluidos, sin red. El 12 de octubre de 2026 pasaron **55 tests con un 98,15 % de cobertura** en local, con Python 3.14.
+Las pruebas usan datos en memoria, archivos temporales y los datasets descargados. Los tests no usan red; la descarga inicial sí la necesita. El 12 de octubre de 2026 pasaron **55 tests con un 98,15 % de cobertura** en local, con Python 3.14.
 
 El workflow `.github/workflows/ci.yml` comprueba ambas partes con Python 3.12 en pushes a `main` y pull requests, con cobertura mínima del 60 %.
 
@@ -52,4 +53,4 @@ OMNI procede de NASA/GSFC SPDF: [documentación](https://omniweb.gsfc.nasa.gov/h
 
 Fecha de descarga original: aproximadamente entre el 5 y el 7 de octubre de 2026.
 
-Se incluye el archivo completo `data/raw/omni2_2000.dat`: **8784 filas y 55 columnas**, con los registros horarios del año 2000. Ocupa unos 2,9 MB y cumple el tamaño indicado en clase. El archivo de 1990 y los resultados generados siguen excluidos de Git.
+El script descarga el archivo completo `data/raw/omni2_2000.dat`: **8784 filas y 55 columnas**, con los registros horarios del año 2000. Ocupa unos 2,9 MB y cumple el tamaño indicado en clase. Todos los datasets y resultados generados quedan excluidos de Git. El script también descarga el CSV de ventas desde una versión fija del repositorio del curso.
