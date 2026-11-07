@@ -91,3 +91,10 @@ intervalo para redactar un resumen. El modo `mock`, usado en los tests,
 devuelve la instrucción recibida sin llamar a la API. El modo `hf` está
 preparado para Hugging Face Inference Providers con `openai/gpt-oss-20b`;
 la llamada real no se ha probado.
+
+Los datos horarios de NASA OMNI están identificados como CC0 1.0 en su
+[ficha de metadatos](https://spase-metadata.org/NASA/NumericalData/OMNI/PT1H).
+
+En el Proyecto III, el backend reutilizará el modelo entrenado y la
+función de predicción. Una interfaz web permitirá elegir una hora de
+emisión UTC y consultar el Kp previsto para el siguiente bloque.
