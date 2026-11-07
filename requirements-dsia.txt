@@ -1,0 +1,15 @@
+﻿-r requirements.txt
+ipykernel
+jupyterlab
+notebook
+numpy
+scipy
+matplotlib
+seaborn
+scikit-learn
+requests
+openpyxl
+joblib
+pandas
+huggingface_hub
+python-dotenv
