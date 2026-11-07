@@ -54,3 +54,40 @@ OMNI procede de NASA/GSFC SPDF: [documentación](https://omniweb.gsfc.nasa.gov/h
 Fecha de descarga original: aproximadamente entre el 5 y el 7 de octubre de 2026.
 
 El script descarga el archivo completo `data/raw/omni2_2000.dat`: **8784 filas y 55 columnas**, con los registros horarios del año 2000. Ocupa unos 2,9 MB y cumple el tamaño indicado en clase. Todos los datasets y resultados generados quedan excluidos de Git. El script también descarga el CSV de ventas desde una versión fija del repositorio del curso.
+
+
+## Proyecto II: pronóstico geomagnético
+
+El modelo estima el Kp del siguiente bloque de tres horas UTC. Usa las
+medias de Bz, densidad de protones y velocidad del viento solar de las
+tres horas previas a la emisión. El Kp del bloque pronosticado se usa
+como etiqueta en entrenamiento y evaluación.
+
+Desde la raíz del repositorio, con el entorno virtual activo:
+
+```bash
+python -m pip install -r requirements.txt
+python scripts/download_data.py --omni-years 2000 2025
+python -m src.pronostico_geomagnetico.train
+python -m src.pronostico_geomagnetico.predict --input data/raw/omni2_2023.dat --model data/processed/modelo_kp.joblib --emision "2024-01-01 00:00" --provider mock
+```
+
+La configuración del modelo se eligió en validación (2022–2023).
+El Boosting final se entrenó con 2000–2023 y se evaluó en 2024–2025.
+El test comparó los tres métodos sobre 5.703 emisiones, de las cuales
+249 tenían Kp observado ≥ 5.
+
+| Método | MAE global | MAE con Kp ≥ 5 |
+| --- | ---: | ---: |
+| Persistencia | 0,863 | 1,551 |
+| Regresión lineal | 0,745 | 1,780 |
+| Gradient Boosting | 0,675 | 1,335 |
+
+La persistencia supone un margen de tres horas tras el cierre del bloque
+para disponer de su Kp. La evaluación es retrospectiva sobre OMNI.
+
+Scikit-learn calcula el Kp. El cliente de IA recibe el resultado y el
+intervalo para redactar un resumen. El modo `mock`, usado en los tests,
+devuelve la instrucción recibida sin llamar a la API. El modo `hf` está
+preparado para Hugging Face Inference Providers con `openai/gpt-oss-20b`;
+la llamada real no se ha probado.

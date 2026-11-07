@@ -226,3 +226,5 @@ data/
 .env
 .env.*
 !.env.example
+# Entorno local de la asignatura DSIA
+.venv-dsia/
