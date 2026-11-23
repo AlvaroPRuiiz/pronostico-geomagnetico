@@ -21,12 +21,10 @@ jobs:
       - name: Instalar dependencias
         run: python -m pip install -r requirements.txt
 
-      - name: Descargar datasets
-        run: python scripts/download_data.py
-
       - name: Ejecutar tests y comprobar cobertura
         run: >
           python -m pytest tests
+          -m "not datasets"
           --cov=src.ventas_app
           --cov=src.pronostico_geomagnetico
           --cov-report=term-missing

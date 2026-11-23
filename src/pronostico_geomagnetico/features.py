@@ -6,13 +6,15 @@ COLUMNAS_VIENTO = [
     "proton_density_cm3",
     "solar_wind_speed_kms",
 ]
+ENTRADAS_MODELO = [f"{columna}_media_3h" for columna in COLUMNAS_VIENTO]
+BLOQUE = pd.Timedelta(hours=3)
 
 
 def construir_dataset(
-    df: pd.DataFrame, incluir_objetivo: bool = True
+    df: pd.DataFrame, incluir_objetivo: bool = True, *, exigir_objetivo: bool = True
 ) -> pd.DataFrame:
     
-    """Une las medias del viento del bloque anterior con el Kp objetivo."""
+    """Indexa las medias del bloque OMNI anterior por el inicio del objetivo."""
     datos = df.copy()
 
     inicio_anio = pd.to_datetime(
@@ -26,12 +28,14 @@ def construir_dataset(
     datos["bloque_kp"] = datos["timestamp"].dt.floor("3h")
 
     grupos = datos.groupby("bloque_kp")
+    horas_completas = grupos.size().eq(3) & grupos["timestamp"].nunique().eq(3)
 
     # Entradas: las tres horas del bloque anterior deben estar completas.
-    viento = grupos[COLUMNAS_VIENTO]
-    ventana_valida = grupos.size().eq(3) & viento.count().eq(3).all(axis=1)
+    viento = datos[COLUMNAS_VIENTO].replace([float("inf"), float("-inf")], float("nan"))
+    viento = viento.groupby(datos["bloque_kp"])
+    ventana_valida = horas_completas & viento.count().eq(3).all(axis=1)
     entradas = viento.mean().loc[ventana_valida].add_suffix("_media_3h")
-    entradas.index = entradas.index + pd.Timedelta(hours=3)
+    entradas.index = entradas.index + BLOQUE
     entradas.index.name = "emision"
 
     if not incluir_objetivo:
@@ -39,10 +43,15 @@ def construir_dataset(
     
     # Etiqueta: un único Kp válido por bloque.
     kp = grupos["kp_x10"]
-    objetivo_valido = grupos.size().eq(3) & kp.count().eq(3) & kp.nunique().eq(1)
+    objetivo_valido = (
+        horas_completas & kp.count().eq(3) & kp.nunique().eq(1) & kp.first().between(0, 90)
+    )
     objetivo = (
         kp.first().where(objetivo_valido).div(10)
         .rename("kp_objetivo").rename_axis("emision")
     )
 
-    return objetivo.to_frame().join(entradas).dropna().sort_index()
+    resultado = entradas.join(objetivo, how="outer").sort_index()
+    if exigir_objetivo:
+        resultado = resultado.dropna()
+    return resultado[["kp_objetivo", *ENTRADAS_MODELO]]
