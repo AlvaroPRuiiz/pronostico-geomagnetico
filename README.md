@@ -92,6 +92,8 @@ devuelve la instrucción recibida sin llamar a la API. El modo `hf` está
 preparado para Hugging Face Inference Providers con `openai/gpt-oss-20b`;
 la llamada real no se ha probado.
 
+El cliente utiliza la tarea `chat_completion`. En GitHub Actions se ejecuta con el proveedor `mock`, sin credenciales ni llamadas externas.
+
 Los datos horarios de NASA OMNI están identificados como CC0 1.0 en su
 [ficha de metadatos](https://spase-metadata.org/NASA/NumericalData/OMNI/PT1H).
 
