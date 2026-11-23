@@ -12,5 +12,5 @@
 
 ## Proyecto III
 
-- **Codex (OpenAI).** Ayudó a contrastar la documentación de NASA, NOAA y GFZ, revisar la disponibilidad temporal de las entradas, implementar la API y la web, y preparar y ejecutar las pruebas. El README enlaza las fuentes y registra las comprobaciones. La decisión de abstención se aplica en el backend y se prueba con datos completos, incompletos y caducados.
+- **Codex (OpenAI).** Ayudó a contrastar la documentación de NASA, NOAA y GFZ, diseñar el contrato causal con bloques GFZ cerrados, implementar el entrenamiento, la evaluación y el registro, y rediseñar la web. Las métricas se calcularon a partir de los archivos oficiales. La emisión de ejemplo se verificó en navegador con la fuente y el modelo reales. Las pruebas offline usan respuestas pequeñas para cubrir validez, caducidad, cambios de bloque y revisión de observaciones.
 - **Cliente de IA en la app.** Se conserva la interfaz del Proyecto II. La web usa `mock` y rotula la respuesta como simulada. La predicción histórica se calcula en scikit-learn.

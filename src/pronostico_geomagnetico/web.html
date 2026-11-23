@@ -1,223 +1,137 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pronóstico geomagnético</title>
-<style>
-:root { color-scheme: dark; --fondo:#101826; --panel:#192637; --borde:#33485c;
-        --texto:#edf5fb; --suave:#b8c9d8; --previsto:#77e4d0; --observado:#ffd27f; }
-* { box-sizing:border-box }
-body { margin:0; background:var(--fondo); color:var(--texto); font:1rem/1.55 system-ui,sans-serif }
-main { max-width:70rem; margin:auto; padding:clamp(1rem,4vw,3rem) }
-header { margin-bottom:1.5rem; border-bottom:1px solid var(--borde); padding-bottom:1.2rem }
-h1 { font-size:clamp(1.9rem,5vw,3.1rem); line-height:1.1; margin:0 .1rem .5rem }
-h2 { font-size:1.25rem; margin:0 }
-p { margin:.45rem 0 .8rem }
-section { background:var(--panel); border:1px solid var(--borde); border-radius:.8rem; padding:1.2rem; margin:0 0 1rem }
-.controls { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; margin:.8rem 0 }
-button,input { font:inherit; border-radius:.45rem; border:1px solid var(--borde); padding:.5rem .75rem }
-input { background:var(--fondo); color:inherit }
-button { background:var(--previsto); color:#10312e; font-weight:650; cursor:pointer }
-button.secundario { background:transparent; color:var(--previsto) }
-button:disabled { opacity:.6; cursor:wait }
-a { color:var(--previsto) }
-.suave, dt, caption { color:var(--suave) }
-.aviso { color:var(--observado) }
-dl { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr)); gap:.7rem; margin:0 }
-dt { font-size:.85rem }
-dd { margin:0; overflow-wrap:anywhere }
-canvas { display:block; width:100%; height:240px; margin:.7rem 0 }
-table { border-collapse:collapse; width:100%; text-align:left; font-variant-numeric:tabular-nums }
-th,td { border-bottom:1px solid var(--borde); padding:.35rem .55rem }
-caption { text-align:left; padding-bottom:.4rem }
-.tabla { overflow-x:auto }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d141f">
+  <title>Monitor Kp · Vigilancia geomagnética</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/monitor.css">
+  <script src="/assets/monitor.js" defer></script>
 </head>
 <body>
-<main>
-<header>
-  <h1>Pronóstico geomagnético</h1>
-  <p class="suave">Índice planetario Kp · bloques de tres horas UTC</p>
-  <p id="modelo" role="status">Consultando el modelo…</p>
-</header>
-<section aria-labelledby="titulo-directo">
-  <h2 id="titulo-directo">Datos en directo</h2>
-  <div class="controls">
-    <button id="directo">Actualizar datos y solicitar pronóstico</button>
-    <button id="observacion" class="secundario">Consultar último bloque cerrado (GFZ)</button>
-  </div>
-  <p id="estado-directo" class="aviso" role="status"></p>
-  <dl id="detalle"></dl>
-  <p id="estado-observacion" role="status"></p>
-</section>
-<section aria-labelledby="titulo-historico">
-  <h2 id="titulo-historico">Reproducción histórica</h2>
-  <p class="suave">Usa archivos OMNI2 procesados. La hora de referencia indica el inicio del bloque retrospectivo.</p>
-  <form id="historico" class="controls">
-    <label for="dia">Día UTC</label>
-    <input type="date" id="dia" value="2025-01-02" min="1963-01-01" required>
-    <button>Reproducir día</button>
-  </form>
-  <p id="estado-historico" role="status"></p>
-  <div id="comparacion" hidden>
-    <p><span style="color:var(--previsto)">● Kp previsto</span> · <span class="aviso">● Kp observado (OMNI2)</span></p>
-    <canvas id="grafica" role="img" aria-label="Kp frente a la hora de inicio de cada bloque UTC. Los valores figuran en la tabla."></canvas>
-    <div class="tabla"><table>
-      <caption>Comparación por bloque UTC</caption>
-      <thead><tr><th scope="col">Bloque</th><th scope="col">Previsto</th><th scope="col">Observado</th></tr></thead>
-      <tbody id="filas"></tbody>
-    </table></div>
-    <div class="controls">
-      <label for="bloque-gfz">Contraste con GFZ</label><select id="bloque-gfz"></select>
-      <button id="contrastar" class="secundario">Consultar Kp GFZ</button>
+  <header class="top">
+    <div class="wrap masthead">
+      <a class="brand" href="#directo"><span class="brand-icon" aria-hidden="true">Kp</span> Monitor Kp</a>
+      <nav aria-label="Secciones">
+        <a href="#directo">Directo</a><a href="#evaluacion">Evaluación</a><a href="#historico">Histórico</a>
+      </nav>
+      <span id="salud" class="badge" role="status">Comprobando servicio</span>
     </div>
-    <p id="contraste" role="status"></p>
-    <p id="ia" class="suave"></p>
-  </div>
-</section>
-<footer><a href="/docs">Documentación de la API</a> · <a href="/health">Salud del servicio</a></footer>
-</main>
-<script>
-const el = id => document.getElementById(id);
-const texto = (id, valor) => { el(id).textContent = valor; };
-const hora = fecha => fecha.slice(11,16);
-const utc = fecha => fecha ? fecha.slice(0,16).replace("T"," ") + " UTC" : "—";
-const kp = valor => valor == null ? "—" : valor.toFixed(2);
-const motivos = {
-  fuente_no_disponible: "La fuente no está disponible o cambió su esquema.",
-  datos_caducados: "Las mediciones están desactualizadas.",
-  datos_incompletos: "Faltan minutos de magnetómetro y plasma válidos del mismo satélite.",
-  fuente_incompatible: "Las medidas de L1 no son entradas OMNI compatibles.",
-  modelo_no_disponible: "El modelo no está disponible.",
-  archivo_omni_invalido: "El archivo OMNI no se pudo procesar.",
-  ventanas_omni_incompletas: "El archivo falta o no tiene ventanas completas para ese día."
-};
-async function consultar(url, method = "GET") {
-  const respuesta = await fetch(url, {method});
-  if (!respuesta.ok) throw new Error("El backend respondió HTTP " + respuesta.status + ".");
-  return respuesta.json();
-}
-function modelo(info) {
-  texto("modelo", info.version ? "Modelo cargado · " + info.tipo + " · SHA-256 " + info.version.slice(0,12)
-                               : "Modelo no disponible");
-}
-async function accion(boton, estado, ejecutar) {
-  boton.disabled = true;
-  texto(estado, "Consultando…");
-  try { await ejecutar(); }
-  catch (error) { texto(estado, error.message); }
-  finally { boton.disabled = false; }
-}
-function detalle(datos) {
-  el("detalle").replaceChildren();
-  for (const [etiqueta, valor] of datos) {
-    const grupo = document.createElement("div");
-    const titulo = document.createElement("dt");
-    const desc = document.createElement("dd");
-    titulo.textContent = etiqueta;
-    desc.textContent = valor;
-    grupo.append(titulo, desc);
-    el("detalle").append(grupo);
-  }
-}
-el("directo").onclick = () => accion(el("directo"), "estado-directo", async () => {
-  el("detalle").replaceChildren();
-  const r = await consultar("/api/pronostico", "POST");
-  modelo(r.modelo);
-  texto("estado-directo", "Sin pronóstico. " + motivos[r.motivo] + " " + r.compatibilidad);
-  detalle([
-    ["Kp previsto", kp(r.kp_previsto)], ["Emisión", utc(r.emision)],
-    ["Decisión", utc(r.decision)],
-    ["Próximo bloque UTC", utc(r.objetivo_inicio) + " a " + utc(r.objetivo_fin)],
-    ["Ventana OMNI requerida (aún abierta)", utc(r.ventana_modelo_inicio) + " a " + utc(r.ventana_modelo_fin)],
-    ["Fuente", r.fuente], ["Satélites emparejados", r.satelites.join(", ") || "—"],
-    ["Último minuto compatible entre instrumentos", utc(r.ultimo_dato)],
-    ["Antigüedad", r.antiguedad_segundos == null ? "—" : Math.round(r.antiguedad_segundos / 60) + " min"],
-    ["Cobertura reciente en L1", r.minutos_validos + "/" + r.minutos_esperados + " min"],
-    ["Recepción magnetómetro", utc(r.recepcion_mag)], ["Recepción plasma", utc(r.recepcion_plasma)]
-  ]);
-});
-function observacion(r) {
-  if (r.estado === "disponible") {
-    return "Kp " + kp(r.kp_observado) + " · " + utc(r.objetivo_inicio) + " · " + r.fuente +
-           " · " + (r.calidad === "def" ? "definitivo" : "provisional");
-  }
-  return {"bloque_abierto":"El bloque sigue abierto.", "observacion_pendiente":"GFZ aún no ofrece un valor válido.",
-          "fuente_no_disponible":"GFZ no está disponible."}[r.estado];
-}
-el("observacion").onclick = () => accion(el("observacion"), "estado-observacion", async () => {
-  texto("estado-observacion", observacion(await consultar("/api/observacion")));
-});
+  </header>
+  <main class="wrap">
+    <section class="section" id="directo" aria-labelledby="titulo">
+      <div class="section-head hero">
+        <div>
+          <h1 id="titulo">Vigilancia geomagnética</h1>
+          <p>Estimación del índice planetario Kp para el próximo bloque completo de tres horas UTC.</p>
+        </div>
+        <button id="actualizar" class="primary" type="button">Actualizar y pronosticar</button>
+      </div>
+      <div class="dashboard">
+        <article class="card forecast">
+          <div class="card-head"><h2>Próximo bloque</h2><span id="estado-pronostico" class="badge" role="status">Sin consultar</span></div>
+          <div class="prediction"><strong id="kp-operativo">—</strong><span>Kp previsto <small>Escala planetaria de 0 a 9</small></span></div>
+          <div class="scale" aria-hidden="true"><div id="marcador" class="scale-marker" hidden></div></div>
+          <div class="scale-labels" aria-hidden="true"><span>0 · calma</span><span>5 · umbral de tormenta</span><span>9</span></div>
+          <dl class="times">
+            <div><dt>Intervalo objetivo</dt><dd id="intervalo">—</dd></div>
+            <div><dt>Anticipación al inicio</dt><dd id="anticipo">—</dd></div>
+            <div><dt>Emisión</dt><dd id="emision">—</dd></div>
+          </dl>
+          <p id="mensaje-pronostico" class="notice" role="status">Consulta los últimos bloques cerrados de GFZ para calcular una estimación.</p>
+        </article>
+        <div class="column">
+          <article class="card">
+            <div class="card-head"><h2>Datos de entrada</h2><span id="cobertura" class="badge">—</span></div>
+            <dl class="source">
+              <div><dt>Fuente</dt><dd id="fuente">GFZ Potsdam · observatorios terrestres</dd></div>
+              <div><dt>Ventana de entrada</dt><dd id="ventana">—</dd></div>
+              <div><dt>Recepción en la app</dt><dd id="recepcion">—</dd></div>
+              <div><dt>Desde el último cierre disponible</dt><dd id="edad">—</dd></div>
+            </dl>
+            <details id="mediciones" hidden><summary>Ver valores usados</summary><ul id="lista-mediciones"></ul></details>
+          </article>
+          <article class="card observation">
+            <div><h2>Último Kp cerrado</h2><p id="obs-ultimo" class="muted" role="status">Consulta el índice observado por GFZ.</p></div>
+            <button id="ultimo" class="secondary" type="button">Consultar GFZ</button>
+          </article>
+        </div>
+      </div>
 
-let serie = [];
-function dibujar() {
-  if (!serie.length) return;
-  const canvas = el("grafica");
-  const ancho = canvas.clientWidth, alto = canvas.clientHeight, escala = window.devicePixelRatio || 1;
-  canvas.width = ancho * escala;
-  canvas.height = alto * escala;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(escala, escala);
-  const y = valor => (alto - 28) - valor * (alto - 40) / 9;
-  const x = indice => 33 + indice * (ancho - 63) / Math.max(serie.length - 1, 1);
-  ctx.font = "11px system-ui";
-  ctx.fillStyle = "#b8c9d8";
-  ctx.strokeStyle = "#33485c";
-  for (const nivel of [0,3,6,9]) {
-    ctx.fillText(nivel, 7, y(nivel) + 4);
-    ctx.beginPath(); ctx.moveTo(24,y(nivel)); ctx.lineTo(ancho - 10,y(nivel)); ctx.stroke();
-  }
-  serie.forEach((b, i) => ctx.fillText(hora(b.objetivo_inicio), x(i) - 13, alto - 8));
-  for (const [campo, color] of [["kp_previsto","#77e4d0"],["kp_observado","#ffd27f"]]) {
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    let anterior = null;
-    serie.forEach((b,i) => {
-      const valor = b[campo];
-      if (valor == null) { anterior = null; return; }
-      const punto = [x(i),y(valor)];
-      if (anterior) { ctx.beginPath(); ctx.moveTo(...anterior); ctx.lineTo(...punto); ctx.stroke(); }
-      ctx.beginPath(); ctx.arc(...punto,3,0,2*Math.PI); ctx.fill();
-      anterior = punto;
-    });
-  }
-}
-window.addEventListener("resize", dibujar);
-el("historico").onsubmit = evento => {
-  evento.preventDefault();
-  accion(evento.currentTarget.querySelector("button"), "estado-historico", async () => {
-    serie = [];
-    el("comparacion").hidden = true;
-    texto("contraste", "");
-    const r = await consultar("/api/historico?dia=" + encodeURIComponent(el("dia").value), "POST");
-    modelo(r.modelo);
-    if (r.estado !== "reproducido") { texto("estado-historico", "Sin pronóstico. " + motivos[r.motivo]); return; }
-    serie = r.serie;
-    const n = serie.filter(b => b.kp_previsto != null).length;
-    texto("estado-historico", r.fuente + " · " + n + "/" + serie.length + " bloques calculados · auditoría " + r.auditoria_id);
-    texto("ia", "Respuesta de IA simulada · " + r.ia.texto);
-    el("filas").replaceChildren();
-    el("bloque-gfz").replaceChildren();
-    for (const b of serie) {
-      const bloque = hora(b.objetivo_inicio) + "–" + hora(b.objetivo_fin);
-      const fila = el("filas").insertRow();
-      for (const dato of [bloque, kp(b.kp_previsto), kp(b.kp_observado)]) fila.insertCell().textContent = dato;
-      if (b.kp_previsto != null) el("bloque-gfz").add(new Option(bloque, b.objetivo_inicio));
-    }
-    el("comparacion").hidden = false;
-    dibujar();
-  });
-};
-el("contrastar").onclick = () => accion(el("contrastar"), "contraste", async () => {
-  const bloque = el("bloque-gfz").value;
-  const r = await consultar("/api/observacion?bloque=" + encodeURIComponent(bloque));
-  if (el("comparacion").hidden || !serie.some(b => b.objetivo_inicio === bloque)) return;
-  const pred = serie.find(b => b.objetivo_inicio === bloque).kp_previsto;
-  const diferencia = r.estado === "disponible" ? " · error absoluto " + kp(Math.abs(pred - r.kp_observado)) : "";
-  texto("contraste", hora(bloque) + " UTC · " + observacion(r) + diferencia);
-});
-consultar("/health").then(r => modelo(r.modelo)).catch(error => texto("modelo", error.message));
-</script>
+      <article class="card track">
+        <div class="card-head">
+          <div><h2>Seguimiento operativo</h2><p id="resumen-operativo" class="muted" role="status">Cargando registro…</p></div>
+          <div class="filters"><label for="rango-operativo">Periodo UTC</label>
+            <select id="rango-operativo"><option value="1">1 día</option><option value="7" selected>7 días</option><option value="30">30 días</option></select>
+          </div>
+        </div>
+        <div class="legend" aria-label="Series"><span class="fit">Previsto</span><span class="obs">Observado</span><span class="ref">Persistencia</span></div>
+        <div id="operativa" class="chart" data-grafica="linea"></div>
+        <div class="table-wrap">
+          <table aria-label="Pronósticos emitidos">
+            <thead><tr><th scope="col">Bloque UTC</th><th scope="col">Previsto</th><th scope="col">Persistencia</th><th scope="col">Observado</th><th scope="col">Error abs.</th><th scope="col">Observación GFZ</th></tr></thead>
+            <tbody id="tabla-operativa"></tbody>
+          </table>
+        </div>
+        <p id="mensaje-seguimiento" class="muted" role="status"></p>
+        <div id="metricas-operativas"></div>
+      </article>
+    </section>
+
+    <section class="section" id="evaluacion" aria-labelledby="eval-titulo">
+      <div class="section-head">
+        <div><h2 id="eval-titulo" class="section-title">Evaluación retrospectiva</h2>
+          <p>Comparación con la persistencia bajo una regla fija de disponibilidad. Los archivos GFZ conservan versiones revisadas.</p></div>
+      </div>
+      <article class="card">
+        <form id="form-evaluacion" class="controls">
+          <div class="filters"><label for="periodo-eval">Evaluación</label><select id="periodo-eval" required></select></div>
+          <div class="filters"><label for="fecha-eval">Desde (UTC)</label><input id="fecha-eval" type="date" required></div>
+          <div class="filters"><label for="dias-eval">Ventana</label><select id="dias-eval"><option value="3">3 días</option><option value="7" selected>7 días</option><option value="14">14 días</option><option value="31">31 días</option></select></div>
+          <button class="secondary" type="submit">Ver periodo</button>
+        </form>
+        <p id="estado-evaluacion" class="notice" role="status">Cargando informe…</p>
+        <div class="charts">
+          <div><h3>Evolución del Kp</h3><div class="legend"><span class="fit">Previsto</span><span class="obs">Observado</span><span class="ref">Persistencia</span></div><div id="eval-linea" class="chart" data-grafica="linea"></div></div>
+          <div><h3>Observado frente a previsto</h3><div class="legend"><span class="fit">Boosting</span><span class="ref">Predicción perfecta</span></div><div id="eval-dispersion" class="chart" data-grafica="dispersion"></div></div>
+        </div>
+        <div class="evaluation-metrics" id="metricas-eval"></div>
+      </article>
+    </section>
+
+    <section class="section" id="historico" aria-labelledby="hist-titulo">
+      <div class="section-head">
+        <div><h2 id="hist-titulo" class="section-title">Reproducción del Proyecto II</h2>
+          <p>Reejecuta el modelo original con el viento solar del archivo OMNI2. La fecha se refiere al bloque histórico, sin una emisión en tiempo real.</p></div>
+      </div>
+      <article class="card">
+        <form id="historico-form" class="controls">
+          <div class="filters"><label for="dia-omni">Día UTC</label><input type="date" id="dia-omni" value="2025-01-02" min="1963-01-01" required></div>
+          <button class="secondary" type="submit">Reproducir día</button>
+        </form>
+        <p id="estado-historico" class="notice" role="status"></p>
+        <div id="resultado-omni" hidden>
+          <div class="legend"><span class="fit">Previsto</span><span class="obs">Observado en OMNI2</span></div>
+          <div id="grafica-omni" class="chart" data-grafica="linea"></div>
+          <div class="table-wrap"><table aria-label="Reproducción por bloque"><thead><tr><th scope="col">Bloque UTC</th><th scope="col">Previsto</th><th scope="col">Observado</th></tr></thead><tbody id="tabla-omni"></tbody></table></div>
+          <div class="controls"><div class="filters"><label for="bloque-omni">Bloque para contraste</label><select id="bloque-omni"></select></div>
+            <button id="contrastar" class="secondary" type="button">Consultar GFZ</button></div>
+          <p id="contraste" role="status"></p><p id="ia" class="muted"></p>
+        </div>
+      </article>
+    </section>
+
+    <section class="card scope" aria-labelledby="alcance">
+      <h2 id="alcance">Qué indica el Kp</h2>
+      <p>Resume la perturbación geomagnética global y da contexto para vigilar comunicaciones HF, navegación GNSS y operaciones espaciales. Una evaluación de un enlace, receptor o satélite concreto requiere datos locales y del sistema.</p>
+      <details><summary>Viento solar en L1 y alcance del modelo</summary>
+        <p>El NOAA SWPC mide campo magnético y plasma cerca de L1. Esa telemetría aporta contexto; el modelo operativo usa exclusivamente Kp de bloques ya cerrados.</p>
+        <button id="viento" type="button" class="secondary">Consultar cobertura NOAA</button>
+        <p id="estado-viento" role="status"></p>
+      </details>
+    </section>
+  </main>
+  <footer class="wrap foot"><span>UTC · GFZ Potsdam CC BY 4.0 · NASA OMNI2 · NOAA SWPC</span><div><a href="/docs">API</a><a href="/health">Salud</a></div></footer>
 </body>
 </html>

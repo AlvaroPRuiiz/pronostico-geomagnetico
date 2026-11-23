@@ -9,14 +9,14 @@ import warnings
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from uuid import uuid4
+from uuid import UUID
 
 import joblib
 import pandas as pd
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.exceptions import InconsistentVersionWarning
 from sklearn.utils.validation import check_is_fitted
@@ -26,40 +26,24 @@ from .exceptions import OmniLoadError, OmniValidationError
 from .features import BLOQUE, ENTRADAS_MODELO, construir_dataset
 from .fuentes import LOG, ahora_utc, descargar_json, observar_kp, revisar_viento
 from .loader import load_omni
+from .operativo import COLUMNAS_KP, METODO_KP, emitir_kp
 from .preprocessor import preprocess_omni
+from .registros import (carpeta_bloque, con_observacion, guardar_auditoria, leer_auditoria,
+                       mejor_observacion, seguimiento)
 from .validator import validate_omni
 
 
-def cargar_modelo(ruta: Path):
+def cargar_modelo(ruta: Path, columnas=ENTRADAS_MODELO):
     contenido = ruta.read_bytes()
     with warnings.catch_warnings():
         warnings.simplefilter("error", InconsistentVersionWarning)
         modelo = joblib.load(io.BytesIO(contenido))
     if not isinstance(modelo, HistGradientBoostingRegressor):
-        raise ValueError("Se esperaba el HistGradientBoostingRegressor del Proyecto II.")
+        raise ValueError("Se esperaba HistGradientBoostingRegressor.")
     check_is_fitted(modelo)
-    if list(getattr(modelo, "feature_names_in_", [])) != ENTRADAS_MODELO:
-        raise ValueError("Las entradas del modelo no coinciden con el pipeline OMNI.")
+    if list(getattr(modelo, "feature_names_in_", [])) != columnas:
+        raise ValueError("Las entradas del modelo no coinciden con su contrato.")
     return modelo, hashlib.sha256(contenido).hexdigest()
-
-
-def guardar_auditoria(carpeta: Path, resultado: dict) -> str:
-    carpeta.mkdir(parents=True, exist_ok=True)
-    identificador = uuid4().hex
-    ruta = carpeta / f"{identificador}.json"
-    with NamedTemporaryFile(dir=carpeta, delete=False, mode="w", encoding="utf-8") as archivo:
-        temporal = Path(archivo.name)
-        try:
-            json.dump(resultado, archivo, ensure_ascii=False, indent=2, allow_nan=False)
-        except BaseException:
-            archivo.close()
-            temporal.unlink(missing_ok=True)
-            raise
-    try:
-        temporal.replace(ruta)
-    finally:
-        temporal.unlink(missing_ok=True)
-    return identificador
 
 
 def reproducir_dia(dia, carpeta, modelo, reloj):
@@ -99,26 +83,38 @@ def reproducir_dia(dia, carpeta, modelo, reloj):
 
 
 def crear_app(ruta_modelo=None, carpeta_omni=None, carpeta_auditoria=None,
-              descargar=descargar_json, reloj=ahora_utc) -> FastAPI:
+              descargar=descargar_json, reloj=ahora_utc, *, ruta_operativo=None,
+              carpeta_evaluacion=None) -> FastAPI:
     load_dotenv()
     ruta_modelo = Path(ruta_modelo or os.getenv("KP_MODEL_PATH", "data/processed/modelo_kp.joblib"))
     carpeta_omni = Path(carpeta_omni or os.getenv("KP_OMNI_DIR", "data/raw"))
     carpeta_auditoria = Path(carpeta_auditoria or os.getenv("KP_AUDIT_DIR", "data/processed/predicciones"))
+    carpeta_evaluacion = Path(carpeta_evaluacion or os.getenv("KP_EVAL_DIR", "data/processed"))
+    ruta_operativo = Path(ruta_operativo or os.getenv(
+        "KP_OPERATIVE_MODEL_PATH", str(carpeta_evaluacion / "modelo_operativo.joblib")
+    ))
+
+    def cargar(ruta, columnas, metodo):
+        info = {"estado": "no_disponible", "version": None, "metodo": metodo}
+        try:
+            modelo, version = cargar_modelo(ruta, columnas)
+            LOG.info("Modelo %s cargado: %s", metodo, version)
+            return modelo, info | {
+                "estado": "cargado", "version": version, "tipo": "HistGradientBoostingRegressor",
+            }
+        except (OSError, ValueError, TypeError, ImportError, AttributeError, EOFError,
+                pickle.UnpicklingError, InconsistentVersionWarning) as error:
+            LOG.warning("Modelo %s no disponible: %s", metodo, error)
+            return None, info
 
     @asynccontextmanager
     async def iniciar(app):
-        app.state.modelo = None
-        app.state.info = {"estado": "no_disponible", "version": None}
-        try:
-            app.state.modelo, version = cargar_modelo(ruta_modelo)
-            app.state.info = {"estado": "cargado", "version": version, "tipo": "HistGradientBoostingRegressor"}
-            LOG.info("Modelo Kp cargado: %s", version)
-        except (OSError, ValueError, TypeError, ImportError, AttributeError, EOFError,
-                pickle.UnpicklingError, InconsistentVersionWarning) as error:
-            LOG.warning("Modelo Kp no disponible: %s", error)
+        app.state.modelo, app.state.info = cargar(ruta_modelo, ENTRADAS_MODELO, "OMNI2 histórico")
+        app.state.operativo, app.state.info_operativo = cargar(ruta_operativo, COLUMNAS_KP, METODO_KP)
         yield
 
     app = FastAPI(title="Pronóstico geomagnético", lifespan=iniciar)
+    app.mount("/assets", StaticFiles(directory=Path(__file__).with_name("web_assets")), name="assets")
 
     @app.get("/", include_in_schema=False)
     def pagina():
@@ -126,14 +122,83 @@ def crear_app(ruta_modelo=None, carpeta_omni=None, carpeta_auditoria=None,
 
     @app.get("/health")
     def health():
-        return {"estado": "ok" if app.state.modelo is not None else "degradado", "modelo": app.state.info}
+        disponible = app.state.operativo is not None or app.state.modelo is not None
+        return {"estado": "ok" if disponible else "degradado", "modelo": app.state.info,
+                "modelo_operativo": app.state.info_operativo}
 
     @app.post("/api/pronostico")
     def pronostico():
-        resultado = revisar_viento(descargar, reloj)
-        LOG.info("Directo %s: %s (%s/180 min)", resultado["objetivo_inicio"],
-                 resultado["motivo"], resultado["minutos_validos"])
-        return resultado | {"modelo": app.state.info}
+        resultado = emitir_kp(app.state.operativo, descargar, reloj) | {"modelo": app.state.info_operativo}
+        if resultado["estado"] == "emitido":
+            try:
+                resultado["auditoria_id"] = guardar_auditoria(carpeta_auditoria / "directo", resultado)
+            except OSError as error:
+                LOG.error("No se pudo guardar la emisión: %s", error)
+                raise HTTPException(503, "No se pudo registrar el pronóstico.") from error
+        LOG.info("Directo %s: %s", resultado["objetivo_inicio"],
+                 resultado.get("motivo", resultado["estado"]))
+        return resultado
+
+    @app.get("/api/viento")
+    def viento():
+        return revisar_viento(descargar, reloj)
+
+    @app.get("/api/seguimiento")
+    def emisiones(dias: int = Query(7, ge=1, le=90)):
+        ahora = reloj()
+        return seguimiento(carpeta_auditoria, app.state.info_operativo["version"],
+                           ahora - pd.Timedelta(days=dias), ahora)
+
+    @app.post("/api/pronosticos/{identificador}/observacion")
+    def actualizar_observacion(identificador: UUID):
+        ruta = carpeta_auditoria / "directo" / f"{identificador.hex}.json"
+        if not ruta.is_file():
+            raise HTTPException(404, "No existe ese pronóstico.")
+        pronostico = leer_auditoria(ruta)
+        bloque = pd.Timestamp(pronostico["objetivo_inicio"])
+        anterior = mejor_observacion(carpeta_auditoria, bloque)
+        if anterior and anterior["calidad"] == "def":
+            return con_observacion(pronostico, anterior)
+
+        nueva = observar_kp(bloque, descargar, reloj)
+        if nueva["estado"] == "disponible":
+            try:
+                guardar_auditoria(carpeta_bloque(carpeta_auditoria, bloque), nueva)
+            except OSError as error:
+                raise HTTPException(503, "No se pudo conservar la observación.") from error
+            mejor = mejor_observacion(carpeta_auditoria, bloque)
+            return con_observacion(pronostico, mejor)
+        if anterior is not None:
+            return con_observacion(pronostico, anterior) | {"actualizacion": nueva["estado"]}
+        return nueva
+
+    @app.get("/api/evaluacion")
+    def evaluacion():
+        ruta = carpeta_evaluacion / "evaluacion.json"
+        if not ruta.is_file():
+            return {"estado": "informe_no_disponible", "periodos": {}}
+        informe = leer_auditoria(ruta)
+        return informe | {
+            "estado": "disponible",
+            "corresponde_modelo_cargado": (
+                informe.get("modelo_sha256") is not None
+                and informe["modelo_sha256"] == app.state.info_operativo["version"]
+            ),
+        }
+
+    @app.get("/api/evaluacion/{periodo}")
+    def serie_evaluacion(periodo: str, inicio: date, dias: int = Query(7, ge=1, le=31)):
+        if periodo not in {"validacion", "gfz2026", "omni"}:
+            raise HTTPException(404, "Periodo de evaluación desconocido.")
+        ruta = carpeta_evaluacion / f"evaluacion_{periodo}.csv"
+        if not ruta.is_file():
+            raise HTTPException(404, "Ese informe aún no está disponible.")
+        datos = pd.read_csv(ruta)
+        desde = pd.Timestamp(inicio, tz="UTC")
+        marcas = pd.to_datetime(datos["bloque"], utc=True)
+        seleccion = marcas.between(desde, desde + pd.Timedelta(days=dias), inclusive="left")
+        serie = datos.loc[seleccion].rename(columns={"bloque": "objetivo_inicio"})
+        return {"serie": json.loads(serie.to_json(orient="records"))}
 
     @app.post("/api/historico")
     def historico(dia: date):

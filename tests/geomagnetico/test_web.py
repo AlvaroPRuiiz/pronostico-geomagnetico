@@ -69,7 +69,8 @@ def test_web_historico_modelo_real_y_auditoria(historico):
     ruta, raw, auditoria, modelo, X = historico
     app = crear_app(ruta, raw, auditoria, reloj=lambda: AHORA)
     with TestClient(app) as cliente:
-        assert 'consultar("/api/historico?dia="' in cliente.get("/").text
+        assert 'id="historico-form"' in cliente.get("/").text
+        assert 'api("/api/historico?dia="' in cliente.get("/assets/monitor.js").text
         salud = cliente.get("/health").json()
         assert salud["estado"] == "ok"
         respuesta = cliente.post(f"/api/historico?dia={DIA}")
@@ -99,7 +100,7 @@ def test_web_historico_modelo_real_y_auditoria(historico):
 def test_modelo_invalido_salud_degradada(tmp_path):
     ruta = tmp_path / "modelo.joblib"
     ruta.write_bytes(b"corrupto")
-    with TestClient(crear_app(ruta_modelo=ruta)) as cliente:
+    with TestClient(crear_app(ruta_modelo=ruta, ruta_operativo=tmp_path / "no-existe")) as cliente:
         assert cliente.get("/health").json()["estado"] == "degradado"
         assert cliente.post(f"/api/historico?dia={DIA}").json()["motivo"] == "modelo_no_disponible"
 
@@ -118,7 +119,8 @@ def test_directo_api_fuente_caida_sin_modelo(tmp_path):
     def sin_red(url):
         raise TimeoutError("NOAA")
 
-    app = crear_app(ruta_modelo=tmp_path / "no-existe", descargar=sin_red, reloj=lambda: AHORA)
+    app = crear_app(ruta_modelo=tmp_path / "no-existe", ruta_operativo=tmp_path / "no-existe",
+                    descargar=sin_red, reloj=lambda: AHORA)
     with TestClient(app) as cliente:
         resultado = cliente.post("/api/pronostico").json()
         assert resultado["motivo"] == "fuente_no_disponible"

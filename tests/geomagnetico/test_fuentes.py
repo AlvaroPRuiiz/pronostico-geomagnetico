@@ -22,21 +22,17 @@ def revisar(mag, plasma, reloj=lambda: AHORA):
     return revisar_viento(lambda url: mag if url == MAG else plasma, reloj)
 
 
-def test_datos_recientes_no_autorizan_sustituir_omni():
+def test_datos_recientes_noaa_diagnostico_independiente():
     mag, plasma = filas_noaa()
     mag += [mag[0].copy(), mag[-1] | {"active": False, "source": "ACE"}]
     resultado = revisar(mag, plasma)
 
-    assert resultado["estado"] == "sin_pronostico"
-    assert resultado["motivo"] == "fuente_incompatible"
-    assert resultado["kp_previsto"] is None and resultado["emision"] is None
-    assert resultado["ventana_modelo_cerrada"] is False
+    assert resultado["estado"] == "datos_validos"
+    assert resultado["motivo"] is None
+    assert "kp_previsto" not in resultado
     assert resultado["minutos_validos"] == 180
     assert resultado["satelites"] == ["SOLAR1"]
     assert resultado["antiguedad_segundos"] == 78
-    assert resultado["objetivo_inicio"] == "2026-11-24T00:00:00+00:00"
-    assert resultado["objetivo_fin"] == "2026-11-24T03:00:00+00:00"
-    assert pd.Timestamp(resultado["objetivo_inicio"]) > AHORA
 
 
 def test_recepcion_antes_de_decision_y_exclusion_del_minuto_abierto():
@@ -47,9 +43,8 @@ def test_recepcion_antes_de_decision_y_exclusion_del_minuto_abierto():
     plasma.append(plasma[-1] | {"time_tag": "2026-11-24T00:01:00"})
     tiempos = iter([AHORA, AHORA + pd.Timedelta(seconds=1), AHORA + pd.Timedelta(minutes=2)])
     resultado = revisar(mag, plasma, lambda: next(tiempos))
-    assert resultado["objetivo_inicio"] == "2026-11-24T03:00:00+00:00"
     assert resultado["ultimo_dato"] == "2026-11-23T23:57:00+00:00"
-    assert resultado["recepcion_mag"] < resultado["recepcion_plasma"] < resultado["decision"]
+    assert resultado["recepcion_mag"] < resultado["recepcion_plasma"] < resultado["consulta"]
 
 
 @pytest.mark.parametrize("cambios", [

@@ -14,6 +14,7 @@ RTSW = "https://services.swpc.noaa.gov/json/rtsw"
 MAG = f"{RTSW}/rtsw_mag_1m.json"
 VIENTO = f"{RTSW}/rtsw_wind_1m.json"
 GFZ = "https://kp.gfz.de/app/json/"
+FUENTE_GFZ = "GFZ Potsdam · CC BY 4.0"
 LOG = logging.getLogger("uvicorn.error")
 
 
@@ -91,14 +92,13 @@ def revisar_viento(descargar=descargar_json, reloj=ahora_utc) -> dict:
         except (OSError, ValueError) as error:
             LOG.warning("Fallo en NOAA %s: %s", nombre, error)
 
-    decision = reloj()
-    fin = decision.floor("min")
+    consulta = reloj()
+    fin = consulta.floor("min")
     inicio = fin - BLOQUE
-    objetivo = decision.floor("3h") + BLOQUE
     pares = mediciones.get("mag", set()) & mediciones.get("plasma", set())
     ventana = {(fecha, satelite) for fecha, satelite in pares if inicio <= fecha < fin}
     ultimo = max((fecha for fecha, _ in pares), default=None)
-    edad = (decision - ultimo).total_seconds() if ultimo is not None else None
+    edad = (consulta - ultimo).total_seconds() if ultimo is not None else None
     if len(mediciones) != 2:
         motivo = "fuente_no_disponible"
     elif edad is not None and edad > 10 * 60:
@@ -106,21 +106,13 @@ def revisar_viento(descargar=descargar_json, reloj=ahora_utc) -> dict:
     elif len(ventana) < 180:
         motivo = "datos_incompletos"
     else:
-        motivo = "fuente_incompatible"
+        motivo = None
 
     return resultado | {
-        "modo": "directo",
-        "estado": "sin_pronostico",
+        "modo": "diagnostico_l1",
+        "estado": "datos_validos" if motivo is None else "datos_no_validos",
         "motivo": motivo,
-        "compatibilidad": "RTSW en L1 no reproduce OMNI propagado a la Tierra.",
-        "ventana_modelo_cerrada": False,
-        "decision": decision.isoformat(),
-        "emision": None,
-        "kp_previsto": None,
-        "objetivo_inicio": objetivo.isoformat(),
-        "objetivo_fin": (objetivo + BLOQUE).isoformat(),
-        "ventana_modelo_inicio": (objetivo - BLOQUE).isoformat(),
-        "ventana_modelo_fin": objetivo.isoformat(),
+        "consulta": consulta.isoformat(),
         "ventana_l1_inicio": inicio.isoformat(),
         "ventana_l1_fin": fin.isoformat(),
         "minutos_validos": len(ventana),
@@ -131,28 +123,53 @@ def revisar_viento(descargar=descargar_json, reloj=ahora_utc) -> dict:
     }
 
 
+def url_gfz(inicio: pd.Timestamp, fin: pd.Timestamp) -> str:
+    formato = "%Y-%m-%dT%H:%M:%SZ"
+    return GFZ + "?" + urlencode(
+        {"start": inicio.strftime(formato), "end": fin.strftime(formato), "index": "Kp"}
+    )
+
+
+def leer_kp_gfz(datos: dict) -> dict:
+    """Valida la escala, calidad y unicidad de cada bloque devuelto por GFZ."""
+    campos = [datos[clave] for clave in ("datetime", "Kp", "status")]
+    if not all(isinstance(campo, list) for campo in campos):
+        raise ValueError("Esquema Kp de GFZ desconocido.")
+    registros, vistos = {}, set()
+    for marca, kp, calidad in zip(*campos, strict=True):
+        if not isinstance(marca, str):
+            continue
+        fecha = pd.to_datetime(marca, utc=True, errors="coerce")
+        if pd.isna(fecha) or fecha != fecha.floor("3h"):
+            continue
+        if fecha in vistos:
+            registros.pop(fecha, None)
+            continue
+        vistos.add(fecha)
+        if calidad in ("pre", "def") and _numero(kp) and 0 <= kp <= 9:
+            # GFZ redondea su JSON a tres cifras decimales; WDC codifica tercios.
+            registros[fecha] = (float(kp), calidad)
+    return registros
+
+
 def observar_kp(inicio: pd.Timestamp, descargar=descargar_json, reloj=ahora_utc) -> dict:
     """Consulta únicamente el Kp GFZ del bloque UTC cerrado indicado."""
-    base = {"fuente": "GFZ Potsdam · CC BY 4.0", "objetivo_inicio": inicio.isoformat()}
+    base = {"fuente": FUENTE_GFZ, "objetivo_inicio": inicio.isoformat()}
     fin = inicio + BLOQUE
     if reloj() < fin:
         return base | {"estado": "bloque_abierto"}
 
-    fecha = inicio.strftime("%Y-%m-%dT%H:%M:%SZ")
-    url = GFZ + "?" + urlencode({"start": fecha, "end": fecha, "index": "Kp"})
+    url = url_gfz(inicio, inicio)
     try:
         datos = descargar(url)
         recibida = reloj()
-        filas = list(zip(datos["datetime"], datos["Kp"], datos["status"], strict=True))
-        coincidencias = [(kp, estado) for fecha, kp, estado in filas
-                         if pd.to_datetime(fecha, utc=True, errors="coerce") == inicio]
-        if len(coincidencias) == 1:
-            kp, estado = coincidencias[0]
-            if estado in ("pre", "def") and _numero(kp) and 0 <= kp <= 9:
-                return base | {
-                    "estado": "disponible", "kp_observado": kp, "calidad": estado,
-                    "recepcion": recibida.isoformat(), "url": url,
-                }
+        coincidencia = leer_kp_gfz(datos).get(inicio)
+        if coincidencia is not None:
+            kp, estado = coincidencia
+            return base | {
+                "estado": "disponible", "kp_observado": kp, "calidad": estado,
+                "recepcion": recibida.isoformat(), "url": url,
+            }
         return base | {"estado": "observacion_pendiente", "url": url}
     except (OSError, ValueError, TypeError, KeyError) as error:
         LOG.warning("Fallo en GFZ: %s", error)
