@@ -50,6 +50,7 @@ def test_cli_archivo_valido(tmp_path):
     assert resultado["porcentaje_completas"] == 100.0
 
 @pytest.mark.integration
+@pytest.mark.datasets
 def test_cli_dataset_2000(tmp_path):
     from pathlib import Path
     entrada = Path(__file__).resolve().parents[2] / "data" / "raw" / "omni2_2000.dat"

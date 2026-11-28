@@ -34,6 +34,7 @@ def test_main_argumentos_controlados(tmp_path, ventas):
 
 
 @pytest.mark.integration
+@pytest.mark.datasets
 def test_exportacion_csv_curso(tmp_path):
     from src.ventas_app.cli import main
     entrada = Path(__file__).resolve().parents[2] / "data" / "ventas.csv"

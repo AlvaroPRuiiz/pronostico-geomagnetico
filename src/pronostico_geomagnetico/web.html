@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101e24">
+  <meta name="description" content="Estimación y seguimiento del índice geomagnético Kp por bloques UTC.">
+  <title>Monitor Kp · Vigilancia geomagnética</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/monitor.css">
+  <script src="/assets/monitor.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap masthead">
+      <a class="brand" href="#directo"><span class="brand-icon" aria-hidden="true">Kp</span> Monitor Kp</a>
+      <nav aria-label="Secciones">
+        <a href="#directo">Directo</a><a href="#evaluacion">Evaluación</a><a href="#historico">Histórico</a>
+      </nav>
+      <span id="salud" class="badge" role="status">Comprobando servicio</span>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="section" id="directo" aria-labelledby="titulo">
+      <div class="section-head hero">
+        <div>
+          <h1 id="titulo">Vigilancia geomagnética</h1>
+          <p>Estimación del índice planetario Kp para el próximo bloque completo de tres horas UTC.</p>
+        </div>
+        <button id="actualizar" class="primary" type="button">Actualizar y pronosticar</button>
+      </div>
+      <div class="dashboard">
+        <article class="card forecast">
+          <div class="card-head"><h2>Próximo bloque</h2><span id="estado-pronostico" class="badge" role="status">Sin consultar</span></div>
+          <div class="prediction"><strong id="kp-operativo">—</strong><span>Kp previsto <small>Escala planetaria de 0 a 9</small></span></div>
+          <div class="scale" aria-hidden="true"><div id="marcador" class="scale-marker" hidden></div></div>
+          <div class="scale-labels" aria-hidden="true"><span>0 (calma)</span><span>5 (tormenta)</span><span>9</span></div>
+          <div class="window-diagram" aria-label="Esquema de la ventana temporal del modelo">
+            <div class="window-label">Bloques de entrada</div>
+            <div class="window-label">Bloque abierto</div>
+            <div class="window-label">Objetivo</div>
+            <div class="window-input"><span>B−12 h</span><span>B−9 h</span><span>B−6 h</span></div>
+            <div class="window-open">Excluido</div>
+            <div class="window-target">B a B+3 h</div>
+          </div>
+          <p class="muted">B es el inicio del próximo bloque UTC completo.</p>
+          <dl class="times">
+            <div><dt>Intervalo objetivo</dt><dd id="intervalo">—</dd></div>
+            <div><dt>Anticipación al inicio</dt><dd id="anticipo">—</dd></div>
+            <div><dt>Emisión</dt><dd id="emision">—</dd></div>
+          </dl>
+          <p id="mensaje-pronostico" class="notice" role="status">Consulta los últimos bloques cerrados de GFZ para calcular una estimación.</p>
+        </article>
+        <div class="column">
+          <article class="card">
+            <div class="card-head"><h2>Datos de entrada</h2><span id="cobertura" class="badge">—</span></div>
+            <dl class="source">
+              <div><dt>Fuente</dt><dd id="fuente">GFZ Potsdam · observatorios terrestres</dd></div>
+              <div><dt>Ventana de entrada</dt><dd id="ventana">—</dd></div>
+              <div><dt>Recepción en la app</dt><dd id="recepcion">—</dd></div>
+              <div><dt>Desde el último cierre disponible</dt><dd id="edad">—</dd></div>
+            </dl>
+            <details id="mediciones" hidden><summary>Ver valores usados</summary><ul id="lista-mediciones"></ul></details>
+          </article>
+          <article class="card observation">
+            <div><h2>Último Kp cerrado</h2><p id="obs-ultimo" class="muted" role="status">Consulta el índice observado por GFZ.</p></div>
+            <button id="ultimo" class="secondary" type="button">Consultar GFZ</button>
+          </article>
+        </div>
+      </div>
+
+      <article class="card track">
+        <div class="card-head">
+          <div><h2>Seguimiento operativo</h2><p id="resumen-operativo" class="muted" role="status">Cargando registro…</p></div>
+          <div class="filters"><label for="rango-operativo">Periodo UTC</label>
+            <select id="rango-operativo"><option value="1">1 día</option><option value="7" selected>7 días</option><option value="30">30 días</option></select>
+          </div>
+        </div>
+        <div class="legend" aria-label="Series"><span class="fit">Previsto</span><span class="obs">Observado</span><span class="ref">Persistencia</span></div>
+        <div id="operativa" class="chart" data-grafica="linea"></div>
+        <div class="table-wrap">
+          <table aria-label="Pronósticos emitidos">
+            <thead><tr><th scope="col">Bloque UTC</th><th scope="col">Previsto</th><th scope="col">Persistencia</th><th scope="col">Observado</th><th scope="col">Error abs.</th><th scope="col">Observación GFZ</th></tr></thead>
+            <tbody id="tabla-operativa"></tbody>
+          </table>
+        </div>
+        <p id="mensaje-seguimiento" class="muted" role="status"></p>
+        <div id="metricas-operativas"></div>
+      </article>
+    </section>
+
+    <section class="section" id="evaluacion" aria-labelledby="eval-titulo">
+      <div class="section-head">
+        <div><h2 id="eval-titulo" class="section-title">Evaluación retrospectiva</h2>
+          <p>Comparación con la persistencia bajo una regla fija de disponibilidad. Los archivos GFZ conservan versiones revisadas.</p></div>
+      </div>
+      <article class="card">
+        <form id="form-evaluacion" class="controls">
+          <div class="filters"><label for="periodo-eval">Evaluación</label><select id="periodo-eval" required></select></div>
+          <div class="filters"><label for="fecha-eval">Desde (UTC)</label><input id="fecha-eval" type="date" required></div>
+          <div class="filters"><label for="dias-eval">Ventana</label><select id="dias-eval"><option value="3">3 días</option><option value="7" selected>7 días</option><option value="14">14 días</option><option value="31">31 días</option></select></div>
+          <button class="secondary" type="submit">Ver periodo</button>
+        </form>
+        <p id="estado-evaluacion" class="notice" role="status">Cargando informe…</p>
+        <div class="charts">
+          <div><h3>Evolución del Kp</h3><div class="legend"><span class="fit">Previsto</span><span class="obs">Observado</span><span class="ref">Persistencia</span></div><div id="eval-linea" class="chart" data-grafica="linea"></div></div>
+          <div><h3>Observado frente a previsto</h3><div class="legend"><span class="fit">Boosting</span><span class="ref">Predicción perfecta</span></div><div id="eval-dispersion" class="chart" data-grafica="dispersion"></div></div>
+        </div>
+        <div class="evaluation-metrics" id="metricas-eval"></div>
+      </article>
+    </section>
+
+    <section class="section" id="historico" aria-labelledby="hist-titulo">
+      <div class="section-head">
+        <div><h2 id="hist-titulo" class="section-title">Reproducción del Proyecto II</h2>
+          <p>Reejecuta el modelo original con el viento solar del archivo OMNI2. La fecha se refiere al bloque histórico, sin una emisión en tiempo real.</p></div>
+      </div>
+      <article class="card">
+        <form id="historico-form" class="controls">
+          <div class="filters"><label for="dia-omni">Día UTC</label><input type="date" id="dia-omni" value="2025-01-02" min="1963-01-01" required></div>
+          <button class="secondary" type="submit">Reproducir día</button>
+        </form>
+        <p id="estado-historico" class="notice" role="status"></p>
+        <div id="resultado-omni" hidden>
+          <div class="legend"><span class="fit">Previsto</span><span class="obs">Observado en OMNI2</span></div>
+          <div id="grafica-omni" class="chart" data-grafica="linea"></div>
+          <div class="table-wrap"><table aria-label="Reproducción por bloque"><thead><tr><th scope="col">Bloque UTC</th><th scope="col">Previsto</th><th scope="col">Observado</th></tr></thead><tbody id="tabla-omni"></tbody></table></div>
+          <div class="controls"><div class="filters"><label for="bloque-omni">Bloque para contraste</label><select id="bloque-omni"></select></div>
+            <button id="contrastar" class="secondary" type="button">Consultar GFZ</button></div>
+          <p id="contraste" role="status"></p><p id="ia" class="muted"></p>
+        </div>
+      </article>
+    </section>
+
+    <section class="card scope" aria-labelledby="alcance">
+      <h2 id="alcance">Qué indica el Kp</h2>
+      <p>Resume la perturbación geomagnética global y da contexto para vigilar comunicaciones HF, navegación GNSS y operaciones espaciales. Una evaluación de un enlace, receptor o satélite concreto requiere datos locales y del sistema.</p>
+      <details><summary>Viento solar en L1 y alcance del modelo</summary>
+        <p>El NOAA SWPC mide campo magnético y plasma cerca de L1. Esa telemetría aporta contexto; el modelo operativo usa exclusivamente Kp de bloques ya cerrados.</p>
+        <button id="viento" type="button" class="secondary">Consultar cobertura NOAA</button>
+        <p id="estado-viento" role="status"></p>
+      </details>
+    </section>
+  </main>
+  <footer class="wrap foot"><span>UTC / GFZ Potsdam CC BY 4.0 / NASA OMNI2 / NOAA SWPC</span><div><a href="/docs">API</a><a href="/health">Salud</a></div></footer>
+</body>
+</html>

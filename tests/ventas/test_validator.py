@@ -25,6 +25,7 @@ def test_ventas_validas(ventas):
 
 
 @pytest.mark.integration
+@pytest.mark.datasets
 def test_csv_curso_140_validas_10_invalidas():
     path = Path(__file__).resolve().parents[2] / "data" / "ventas.csv"
     validos, errores = validar_ventas(load(path))
