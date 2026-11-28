@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0d141f">
+  <meta name="theme-color" content="#101e24">
+  <meta name="description" content="Estimación y seguimiento del índice geomagnético Kp por bloques UTC.">
   <title>Monitor Kp · Vigilancia geomagnética</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/assets/monitor.css">
@@ -33,7 +34,16 @@
           <div class="card-head"><h2>Próximo bloque</h2><span id="estado-pronostico" class="badge" role="status">Sin consultar</span></div>
           <div class="prediction"><strong id="kp-operativo">—</strong><span>Kp previsto <small>Escala planetaria de 0 a 9</small></span></div>
           <div class="scale" aria-hidden="true"><div id="marcador" class="scale-marker" hidden></div></div>
-          <div class="scale-labels" aria-hidden="true"><span>0 · calma</span><span>5 · umbral de tormenta</span><span>9</span></div>
+          <div class="scale-labels" aria-hidden="true"><span>0 (calma)</span><span>5 (tormenta)</span><span>9</span></div>
+          <div class="window-diagram" aria-label="Esquema de la ventana temporal del modelo">
+            <div class="window-label">Bloques de entrada</div>
+            <div class="window-label">Bloque abierto</div>
+            <div class="window-label">Objetivo</div>
+            <div class="window-input"><span>B−12 h</span><span>B−9 h</span><span>B−6 h</span></div>
+            <div class="window-open">Excluido</div>
+            <div class="window-target">B a B+3 h</div>
+          </div>
+          <p class="muted">B es el inicio del próximo bloque UTC completo.</p>
           <dl class="times">
             <div><dt>Intervalo objetivo</dt><dd id="intervalo">—</dd></div>
             <div><dt>Anticipación al inicio</dt><dd id="anticipo">—</dd></div>
@@ -132,6 +142,6 @@
       </details>
     </section>
   </main>
-  <footer class="wrap foot"><span>UTC · GFZ Potsdam CC BY 4.0 · NASA OMNI2 · NOAA SWPC</span><div><a href="/docs">API</a><a href="/health">Salud</a></div></footer>
+  <footer class="wrap foot"><span>UTC / GFZ Potsdam CC BY 4.0 / NASA OMNI2 / NOAA SWPC</span><div><a href="/docs">API</a><a href="/health">Salud</a></div></footer>
 </body>
 </html>
